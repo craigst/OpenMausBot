@@ -438,7 +438,7 @@ import { uploadableFiles } from "./browser-upload.ts";
 import { listSignedInSites, signOutOfSites } from "./browser-sites.ts";
 import { HeldSecrets, LoginStore } from "./login-store.ts";
 import { OnePasswordLogins, onePasswordUnavailable, sdkOnePasswordClient, type OnePasswordSdk } from "./onepassword.ts";
-import { defaultBwRunner, vaultwardenClient } from "./vaultwarden-client.ts";
+import { defaultBwRunner, loadVaultwardenEnv, vaultwardenClient } from "./vaultwarden-client.ts";
 import { nativeRequire } from "./data/engine.ts";
 import { fillLogin } from "./login-fill.ts";
 import { BotLogins, cardLoginPlace, cardSignInElsewhere, observeSignInPage, type ObservedPage } from "./bot-logins.ts";
@@ -742,6 +742,8 @@ const onePassword = new OnePasswordLogins({
     // client under it changes, and `bw` does the decryption. Opt in with OMB_VAULT_PROVIDER so a
     // fork can run either without a config migration.
     if ((process.env.OMB_VAULT_PROVIDER ?? "").toLowerCase() === "vaultwarden") {
+      // Credentials live in a 0600 file on the data volume; bw reads BW_* from its environment.
+      loadVaultwardenEnv();
       return vaultwardenClient(defaultBwRunner({ binary: process.env.VAULTWARDEN_BW_BIN }), token, {
         binary: process.env.VAULTWARDEN_BW_BIN,
         organizationId: process.env.VAULTWARDEN_ORGANIZATION_ID,

@@ -68,6 +68,22 @@ RUN apt-get update \
     libxshmfence1 libgbm1 fonts-noto-color-emoji fonts-noto-cjk fonts-freefont-ttf \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --create-home --home-dir /data --shell /bin/bash maus
+# Bitwarden CLI, for the optional Vaultwarden provider (OMB_VAULT_PROVIDER=vaultwarden).
+# Off by default: a normal image is byte-for-byte unchanged and does not carry 45 MB it will not use.
+# Build the vault flavour with --build-arg WITH_BW=1. The release zip holds one static binary, so
+# there is no npm package and nothing added to node_modules. Pin the version here and nowhere else.
+ARG BW_CLI_VERSION=2026.10.0
+ARG WITH_BW=0
+RUN if [ "$WITH_BW" = "1" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends unzip \
+      && curl -fsSL -o /tmp/bw.zip "https://github.com/bitwarden/clients/releases/download/cli-v${BW_CLI_VERSION}/bw-linux-${BW_CLI_VERSION}.zip" \
+      && unzip -q /tmp/bw.zip -d /usr/local/bin \
+      && chmod 755 /usr/local/bin/bw \
+      && rm -f /tmp/bw.zip \
+      && rm -rf /var/lib/apt/lists/* \
+      && bw --version; \
+    else echo "bw: not installed (WITH_BW=0)"; fi
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
 # and a Chrome for Testing with its libraries, so a server bot can browse.
 # Pin here and in server/browser-engine-release.ts together.

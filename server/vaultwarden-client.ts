@@ -9,6 +9,7 @@
 // The password is never decrypted here: `bw` does the KDF and AES work. This process only ever
 // receives the plaintext at the moment OnePasswordLogins already needs it to fill a page.
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import type { OnePasswordClient, OnePasswordItemFields } from "./onepassword.ts";
 
 /** Runs one `bw` invocation and returns stdout. Injected so the client is testable without a vault. */
@@ -60,6 +61,36 @@ const LOGIN_TYPE = 1;
 
 function urlsOf(item: BwItem): string[] {
   return (item.login?.uris ?? []).map((entry) => entry.uri).filter((uri): uri is string => Boolean(uri));
+}
+
+/** Reads KEY=VALUE lines into process.env without overriding anything already set.
+ *
+ *  The build only puts `bw` on PATH; the credentials live in a 0600 file on the data volume
+ *  (`/data/.openmausbot/vaultwarden.env`), never in the image and never in config.json. `bw` reads
+ *  BW_* from its environment, so the file has to be folded in before the first call.
+ *  A missing file is not an error: it means the provider was enabled without credentials, and `bw`
+ *  then says so in its own words.
+ */
+export function loadVaultwardenEnv(file = process.env.OMB_VAULTWARDEN_ENV || "/data/.openmausbot/vaultwarden.env"): number {
+  let raw: string;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch {
+    return 0;
+  }
+  let applied = 0;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const at = trimmed.indexOf("=");
+    if (at < 1) continue;
+    const key = trimmed.slice(0, at).trim();
+    const value = trimmed.slice(at + 1).trim();
+    if (!/^[A-Z][A-Z0-9_]*$/.test(key) || process.env[key] !== undefined) continue;
+    process.env[key] = value;
+    applied += 1;
+  }
+  return applied;
 }
 
 export function vaultwardenClient(run: BwRunner, session: string, options: VaultwardenOptions = {}): OnePasswordClient {
