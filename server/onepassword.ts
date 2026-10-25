@@ -129,15 +129,24 @@ export class OnePasswordLogins {
   private refreshing: Promise<OnePasswordStatus> | null = null;
   private readonly lastUsed = new Map<string, number>();
 
-  constructor(options: { token: () => string | null; connect: (token: string) => Promise<OnePasswordClient>; grants?: () => Record<string, LoginBots>; now?: () => number }) {
+  /** `defaultBots` is what a vault not named in the grants map is offered to.
+   *
+   *  1Password has always defaulted to "all"; a Vaultwarden deployment should default to none,
+   *  because a household vault holds a `security-agent` collection with 62 logins in it and every
+   *  bot would otherwise be offered all of them before anyone granted anything.
+   */
+  private readonly defaultBots: LoginBots;
+
+  constructor(options: { token: () => string | null; connect: (token: string) => Promise<OnePasswordClient>; grants?: () => Record<string, LoginBots>; defaultBots?: LoginBots; now?: () => number }) {
     this.token = options.token;
     this.connect = options.connect;
     this.grants = options.grants ?? (() => ({}));
+    this.defaultBots = options.defaultBots ?? "all";
     this.now = options.now ?? Date.now;
   }
 
   private botsFor(vaultId: string): LoginBots {
-    return this.grants()[vaultId] ?? "all";
+    return this.grants()[vaultId] ?? this.defaultBots;
   }
 
   private connected(): OnePasswordStatus {

@@ -734,6 +734,9 @@ const highlevel = createHighLevelService({ dataDir: DATA_DIR });
 const heldSecrets = new HeldSecrets(logins);
 addHeldSecretScrubber((text) => heldSecrets.scrub(text));
 const onePassword = new OnePasswordLogins({
+  // Vaultwarden starts denied: a vault is offered to no bot until it is granted, so a fresh connect
+  // cannot silently hand every bot the security-agent collection.
+  defaultBots: (process.env.OMB_VAULT_PROVIDER ?? "").toLowerCase() === "vaultwarden" ? [] : "all",
   token: () => logins.onePasswordToken(),
   grants: () => logins.onePasswordGrants(),
   connect: async (token) => {
