@@ -256,8 +256,10 @@ export class LoginStore {
   /** "all" opens a vault to every bot again. */
   setOnePasswordGrant(vaultId: string, bots: LoginBots): void {
     const data = this.read();
-    const { [vaultId]: _previous, ...others } = data.onePasswordGrants ?? {};
-    const grants = bots === "all" ? others : { ...others, [vaultId]: bots };
+    // Store the grant even when it is "all". Omitting it was only equivalent while "all" was the
+    // fallback for an unlisted vault; a provider that defaults to none (Vaultwarden) could then never
+    // be granted "all" again, because the key was deleted on write.
+    const grants = { ...(data.onePasswordGrants ?? {}), [vaultId]: bots };
     const { onePasswordGrants: _grants, ...rest } = data;
     this.write(Object.keys(grants).length ? { ...rest, onePasswordGrants: grants } : rest);
   }

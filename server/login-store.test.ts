@@ -155,7 +155,9 @@ describe("the saved logins store", () => {
     expect(new LoginStore({ dataDir: dir }).onePasswordToken()).toBeNull();
     expect(new LoginStore({ dataDir: dir }).onePasswordGrants()).toEqual({ v1: ["pepper"], v2: [] });
     store.setOnePasswordGrant("v1", "all");
-    expect(new LoginStore({ dataDir: dir }).onePasswordGrants()).toEqual({ v2: [] });
+    // "all" is written, not dropped: a provider with a deny-by-default vault would otherwise be
+    // unable to re-grant a vault to every bot.
+    expect(new LoginStore({ dataDir: dir }).onePasswordGrants()).toEqual({ v1: "all", v2: [] });
   });
 });
 
