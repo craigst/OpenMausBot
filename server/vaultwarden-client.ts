@@ -18,8 +18,12 @@ export type BwRunner = (args: string[], input?: string) => Promise<string>;
 export interface VaultwardenOptions {
   /** `bw` on PATH, or an absolute path (the companion plugin bundles one at node_modules/.bin/bw). */
   binary?: string;
-  /** The organisation whose collections are exposed. Personal items are never shown to agents. */
+  /** The organisation whose collections are exposed. REQUIRED: `bw list org-collections` refuses without it. */
   organizationId?: string;
+  /** The Vaultwarden base URL. `bw` defaults to bitwarden.com, so this must be set for a self-hosted vault. */
+  serverUrl?: string;
+  /** Skip the login/unlock bootstrap and use this session key (used by the tests). */
+  session?: string;
   timeoutMs?: number;
 }
 
@@ -50,6 +54,7 @@ export function defaultBwRunner(options: VaultwardenOptions = {}): BwRunner {
 
 interface BwItem {
   id?: string;
+  collectionIds?: string[];
   name?: string;
   type?: number;
   login?: { username?: string; password?: string; totp?: string; uris?: Array<{ uri?: string }> };
@@ -93,11 +98,40 @@ export function loadVaultwardenEnv(file = process.env.OMB_VAULTWARDEN_ENV || "/d
   return applied;
 }
 
-export function vaultwardenClient(run: BwRunner, session: string, options: VaultwardenOptions = {}): OnePasswordClient {
-  const sessionArgs = ["--session", session];
+export function vaultwardenClient(run: BwRunner, token: string, options: VaultwardenOptions = {}): OnePasswordClient {
+  const orgId = options.organizationId || process.env.VAULTWARDEN_ORGANIZATION_ID || "";
+  const serverUrl = options.serverUrl || process.env.VAULTWARDEN_URL || "";
+  let pending: Promise<string> | null = null;
+
+  /** One bootstrap for the whole client: point bw at Vaultwarden, log in, unlock.
+   *
+   *  `bw` defaults to bitwarden.com, so without `config server` a self-hosted vault answers
+   *  "client_id or client_secret is incorrect" — which looks like bad credentials and is not.
+   *  `bw login --apikey` fails with "already logged in", which is success for our purposes.
+   */
+  const session = () => {
+    if (options.session) return Promise.resolve(options.session);
+    if (process.env.BW_SESSION) return Promise.resolve(process.env.BW_SESSION);
+    if (!pending) {
+      pending = (async () => {
+        // A persisted HOME stays logged in, and `bw` then refuses to change the server
+        // ("Logout required before server config update"). That means it is already configured,
+        // which is what we wanted, so login/unlock below are the real gate.
+        if (serverUrl) await run(["config", "server", serverUrl]).catch(() => undefined);
+        await run(["login", "--apikey"]).catch(() => undefined);
+        const unlocked = (await run(["unlock", token, "--raw"])).trim();
+        if (!unlocked) {
+          throw new Error("Vaultwarden did not return a session key; the master password was not accepted.");
+        }
+        return unlocked;
+      })();
+    }
+    return pending;
+  };
 
   const list = async (args: string[]): Promise<unknown> => {
-    const raw = await run([...args, ...sessionArgs]);
+    const key = await session();
+    const raw = await run([...args, "--session", key]);
     try {
       return JSON.parse(raw || "[]");
     } catch {
@@ -107,16 +141,26 @@ export function vaultwardenClient(run: BwRunner, session: string, options: Vault
 
   return {
     async vaults() {
-      const collections = (await list(["list", "org-collections"])) as BwCollection[];
-      const org = options.organizationId;
+      if (!orgId) {
+        throw new Error(
+          "VAULTWARDEN_ORGANIZATION_ID is not set: `bw list org-collections` requires an organisation id, so no vault can be listed.",
+        );
+      }
+      const collections = (await list(["list", "org-collections", "--organizationid", orgId])) as BwCollection[];
+      const org = orgId;
       return collections
         .filter((collection) => Boolean(collection.id) && (!org || collection.organizationId === org))
         .map((collection) => ({ id: collection.id!, title: collection.name || "Collection" }));
     },
 
     async loginItems(vaultId) {
-      const items = (await list(["list", "items", "--organizationid", options.organizationId ?? "", "--collectionid", vaultId])) as BwItem[];
+      // `bw list items --collectionid` does NOT filter: it returns every item in the organisation.
+      // Measured on a real vault — all nine collections came back with the same 63 logins — so the
+      // filter has to run here, on each item's own collectionIds. Without it a bot granted "media"
+      // would be offered the "security-agent" logins too, which is the whole point of the grants.
+      const items = (await list(["list", "items", "--organizationid", orgId])) as BwItem[];
       return items
+        .filter((item) => (item.collectionIds ?? []).includes(vaultId))
         .filter((item) => item.type === LOGIN_TYPE && Boolean(item.id))
         // An item with no URI has no site for a fill to match, so it would never be used.
         .filter((item) => urlsOf(item).length > 0)
@@ -128,7 +172,7 @@ export function vaultwardenClient(run: BwRunner, session: string, options: Vault
       for (const id of itemIds) {
         // One call per item: `bw get` has no batch form. loginItems() already trimmed the set to
         // real logins with a URI, so this stays small.
-        const item = JSON.parse(await run(["get", "item", id, ...sessionArgs]) || "{}") as BwItem;
+        const item = JSON.parse((await run(["get", "item", id, "--session", await session()])) || "{}") as BwItem;
         found.set(id, {
           username: item.login?.username ?? "",
           password: item.login?.password ?? "",
