@@ -438,6 +438,7 @@ import { uploadableFiles } from "./browser-upload.ts";
 import { listSignedInSites, signOutOfSites } from "./browser-sites.ts";
 import { HeldSecrets, LoginStore } from "./login-store.ts";
 import { OnePasswordLogins, onePasswordUnavailable, sdkOnePasswordClient, type OnePasswordSdk } from "./onepassword.ts";
+import { defaultBwRunner, vaultwardenClient } from "./vaultwarden-client.ts";
 import { nativeRequire } from "./data/engine.ts";
 import { fillLogin } from "./login-fill.ts";
 import { BotLogins, cardLoginPlace, cardSignInElsewhere, observeSignInPage, type ObservedPage } from "./bot-logins.ts";
@@ -736,6 +737,16 @@ const onePassword = new OnePasswordLogins({
   token: () => logins.onePasswordToken(),
   grants: () => logins.onePasswordGrants(),
   connect: async (token) => {
+    // A Vaultwarden deployment reuses this whole provider: the password store, the per-bot grants,
+    // refresh, status and candidates(pageHost, botId) are all OnePasswordLogins' own. Only the
+    // client under it changes, and `bw` does the decryption. Opt in with OMB_VAULT_PROVIDER so a
+    // fork can run either without a config migration.
+    if ((process.env.OMB_VAULT_PROVIDER ?? "").toLowerCase() === "vaultwarden") {
+      return vaultwardenClient(defaultBwRunner({ binary: process.env.VAULTWARDEN_BW_BIN }), token, {
+        binary: process.env.VAULTWARDEN_BW_BIN,
+        organizationId: process.env.VAULTWARDEN_ORGANIZATION_ID,
+      });
+    }
     let sdk: OnePasswordSdk;
     try { sdk = nativeRequire()("@1password/sdk") as OnePasswordSdk; }
     catch (error) { throw onePasswordUnavailable(error); }
