@@ -39,7 +39,7 @@ export function defaultBwRunner(options: VaultwardenOptions = {}): BwRunner {
   const timeout = options.timeoutMs ?? 60_000;
   return (args, input) =>
     new Promise((resolve, reject) => {
-      const child = execFile(binary, args, { timeout, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+      const child = execFile(binary, args, { timeout, maxBuffer: 32 * 1024 * 1024 }, (error: Error | null, stdout: string, stderr: string) => {
         if (error) return reject(bwFailure(String(stderr ?? ""), (error as { code?: number }).code ?? null, binary));
         resolve(String(stdout ?? ""));
       });
