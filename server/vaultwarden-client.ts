@@ -139,6 +139,20 @@ export function vaultwardenClient(run: BwRunner, token: string, options: Vaultwa
     }
   };
 
+  /** Every item in the organisation, fetched ONCE.
+   *
+   *  `bw list items` already returns decrypted logins, so `fields()` can be answered from here.
+   *  The first version ran `bw get` per item: with 150 items that was over a minute of subprocesses,
+   *  and the connect request simply hung. One listing serves both methods.
+   */
+  let itemsOnce: Promise<BwItem[]> | null = null;
+  const allItems = () => {
+    if (!itemsOnce) {
+      itemsOnce = list(["list", "items", "--organizationid", orgId]).then((raw) => (Array.isArray(raw) ? (raw as BwItem[]) : []));
+    }
+    return itemsOnce;
+  };
+
   return {
     async vaults() {
       if (!orgId) {
@@ -158,7 +172,7 @@ export function vaultwardenClient(run: BwRunner, token: string, options: Vaultwa
       // Measured on a real vault — all nine collections came back with the same 63 logins — so the
       // filter has to run here, on each item's own collectionIds. Without it a bot granted "media"
       // would be offered the "security-agent" logins too, which is the whole point of the grants.
-      const items = (await list(["list", "items", "--organizationid", orgId])) as BwItem[];
+      const items = await allItems();
       return items
         .filter((item) => (item.collectionIds ?? []).includes(vaultId))
         .filter((item) => item.type === LOGIN_TYPE && Boolean(item.id))
@@ -168,12 +182,11 @@ export function vaultwardenClient(run: BwRunner, token: string, options: Vaultwa
     },
 
     async fields(_vaultId, itemIds) {
+      const wanted = new Set(itemIds);
       const found = new Map<string, OnePasswordItemFields>();
-      for (const id of itemIds) {
-        // One call per item: `bw get` has no batch form. loginItems() already trimmed the set to
-        // real logins with a URI, so this stays small.
-        const item = JSON.parse((await run(["get", "item", id, "--session", await session()])) || "{}") as BwItem;
-        found.set(id, {
+      for (const item of await allItems()) {
+        if (!item.id || !wanted.has(item.id)) continue;
+        found.set(item.id, {
           username: item.login?.username ?? "",
           password: item.login?.password ?? "",
           totp: item.login?.totp ?? null,

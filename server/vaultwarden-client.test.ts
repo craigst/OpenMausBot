@@ -64,14 +64,25 @@ describe("vaultwardenClient", () => {
   });
 
   it("reads username, password and a missing totp as null", async () => {
-    const run = runner({ "get item": JSON.stringify({ id: "i1", type: 1, login: { username: "craig", password: "secret" } }) });
-    const client = vaultwardenClient(run, "pw", SESSION);
+    const client = vaultwardenClient(runner({ "list items": ITEMS }), "pw", SESSION);
     const fields = await client.fields("c1", ["i1"]);
-    expect(fields.get("i1")).toEqual({ username: "craig", password: "secret", totp: null });
+    expect(fields.get("i1")).toEqual({ username: "craig", password: "p", totp: null });
+  });
+
+  it("never asks bw for one item at a time", async () => {
+    // `bw get` per item hung the connect request on a real vault: 150 subprocesses in series.
+    const run = runner({ "list items": ITEMS });
+    const client = vaultwardenClient(run, "pw", SESSION);
+    await client.loginItems("c1");
+    await client.fields("c1", ["i1", "i2"]);
+    const gets = run.calls.filter((args) => args[0] === "get");
+    expect(gets).toEqual([]);
+    // ...and the listing itself is fetched once for both methods.
+    expect(run.calls.filter((args) => args[0] === "list" && args[1] === "items")).toHaveLength(1);
   });
 
   it("passes the session to every call", async () => {
-    const run = runner({ "list items": ITEMS, "get item": "{}" });
+    const run = runner({ "list items": ITEMS });
     const client = vaultwardenClient(run, "pw", SESSION);
     await client.loginItems("c1");
     await client.fields("c1", ["i1"]);
