@@ -92,12 +92,30 @@ describe("official Antigravity catalog", () => {
         { value: "account-high", name: "Account High" },
         { group: "More", options: [{ value: "account-low", name: "Account Low" }] },
       ],
+    }, {
+      id: "thinking_level",
+      category: "thought_level",
+      type: "select",
+      currentValue: "high",
+      options: [
+        { value: "low", name: "Low" },
+        { value: "medium", name: "Medium" },
+        { value: "high", name: "High" },
+      ],
     }];
     expect(catalogFromAntigravityConfigOptions(options, "missing")).toEqual({
       default: "account-low",
       options: [
         { id: "account-high", label: "Account High" },
-        { id: "account-low", label: "Account Low" },
+        {
+          id: "account-low",
+          label: "Account Low",
+          variants: [
+            { id: "low", label: "Low" },
+            { id: "medium", label: "Medium" },
+            { id: "high", label: "High" },
+          ],
+        },
       ],
     });
   });
@@ -270,7 +288,7 @@ describe("official Antigravity runtime", () => {
   it("pins Google's release metadata for this supported host", () => {
     const asset = resolveAntigravityReleaseAsset();
     if (!asset) return;
-    expect(ANTIGRAVITY_RELEASE_VERSION).toBe("agy_acp_server_1.1.1");
+    expect(ANTIGRAVITY_RELEASE_VERSION).toBe("1.4.3");
     expect(asset.version).toBe(ANTIGRAVITY_RELEASE_VERSION);
     expect(asset.url).toMatch(/^https:\/\/dl\.google\.com\/agy-extensions\/releases\//u);
     expect(asset.sha256).toMatch(/^[a-f0-9]{64}$/u);
@@ -339,10 +357,10 @@ describe("official Antigravity runtime", () => {
 
   it("validates ACP initialize results from official Antigravity releases", testValidatesAcpInitializeResults);
 
-  // Captured from the SHA-256-pinned Google 1.1.1 macOS arm64 binary, unauthenticated: optional operations are objects.
+  // Captured from the SHA-256-pinned Google 1.4.3 Windows x64 binary, unauthenticated: optional operations are objects.
   const officialInitialize = {
     protocolVersion: 1,
-    agentInfo: { name: "antigravity-acp", title: "Google Antigravity", version: "agy_acp_server_1.1.1" },
+    agentInfo: { name: "antigravity-acp", title: "Google Antigravity", version: "1.4.3" },
     agentCapabilities: {
       loadSession: true,
       sessionCapabilities: { list: {}, resume: {} },
@@ -700,6 +718,16 @@ describe("Antigravity driver over shared ACP", () => {
         GOOGLE_API_KEY: "also-must-not-leak",
         FAKE_ACP_AUTH_METHOD: "oauth-personal",
         FAKE_ACP_MODELS: "gemini-3.8-flash-high,gemini-3.8-flash-low",
+        FAKE_ACP_VARIANTS: JSON.stringify({
+          "gemini-3.8-flash-low": {
+            currentValue: "medium",
+            options: [
+              { value: "low", name: "Low" },
+              { value: "medium", name: "Medium" },
+              { value: "high", name: "High" },
+            ],
+          },
+        }),
         FAKE_ACP_MODES: "default,yolo,auto_edit",
         FAKE_ACP_DUMP: dump,
         // Inherited temp folders: replaced on Windows, passed through elsewhere.
@@ -716,6 +744,7 @@ describe("Antigravity driver over shared ACP", () => {
       approvalMode,
       resumeCursor: "fake-acp-session",
       model: "gemini-3.8-flash-low",
+      variant: "high",
       integrations: {
         custom: { docs: { command: "docs-mcp", args: ["serve"], env: { TOKEN: "scoped" } } },
       },
@@ -735,6 +764,7 @@ describe("Antigravity driver over shared ACP", () => {
     expect(calls).toEqual([
       { method: "session/set_config_option", params: { sessionId: "fake-acp-session", configId: "model", value: "gemini-3.8-flash-low" } },
       { method: "session/set_config_option", params: { sessionId: "fake-acp-session", configId: "mode", value: approvalMode === "full" ? "yolo" : approvalMode === "edits" ? "auto_edit" : "default" } },
+      { method: "session/set_config_option", params: { sessionId: "fake-acp-session", configId: "effort", value: "high" } },
     ]);
     const mcp = JSON.parse(readFileSync(`${dump}.mcp.json`, "utf8"));
     expect(mcp).toEqual([{ name: "docs", command: "docs-mcp", args: ["serve"], env: [{ name: "TOKEN", value: "scoped" }] }]);
