@@ -21,6 +21,7 @@ import { voiceKeyDraftValue, type VoiceKeyDraft } from "@/lib/voice-key-draft";
 import { VoicePicker, type PickerVoice } from "./VoicePicker";
 import { Select } from "./Select";
 import { Switch } from "./SettingsPrimitives";
+import { KeysLink } from "./keys/KeysLink";
 
 const SAMPLE = "Morning. Overnight the tests went green, and I left two notes for you in the thread.";
 const FISH_MODELS = [
@@ -296,7 +297,7 @@ export function VoiceSettings({
                 title={!option.available ? t("voice.hostNotConfigured") : undefined}
                 onClick={() => chooseDeviceProvider(option.value)}
                 className={cn(
-                  "rounded-lg px-3.5 py-1.5 text-[12.5px] transition-colors disabled:opacity-50",
+                  "rounded-lg px-3.5 py-1.5 text-[13px] transition-colors disabled:opacity-50",
                   deviceProvider === option.value ? "bg-raised text-ink shadow" : "text-ink-secondary hover:text-ink",
                 )}
               >
@@ -328,7 +329,7 @@ export function VoiceSettings({
                 title={!option.available ? t("voice.macOnly") : undefined}
                 onClick={() => setProvider(option.value)}
                 className={cn(
-                  "min-w-0 rounded-lg px-2 py-1.5 text-[12.5px] leading-tight transition-colors disabled:opacity-50",
+                  "min-w-0 rounded-lg px-2 py-1.5 text-[13px] leading-tight transition-colors disabled:opacity-50",
                   option.span,
                   provider === option.value ? "bg-raised text-ink shadow" : "text-ink-secondary hover:text-ink",
                 )}
@@ -395,13 +396,13 @@ export function VoiceSettings({
               </option>
             ))}
           </Select>
-          <div className="mt-1.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("voice.fish.modelHint")}</div>
+          <div className="mt-1.5 text-[12px] leading-relaxed text-ink-secondary">{t("voice.fish.modelHint")}</div>
         </div>
       )}
 
       {provider === "xai" && (
         <p className="mt-4 text-[13px] text-ink-secondary">
-          {hostConfigured ? t("voice.grok.ready") : t("voice.grok.missingKey")}
+          {hostConfigured ? t("voice.grok.ready") : <>{t("voice.grok.missingKey")} <KeysLink id="xai" /></>}
         </p>
       )}
 
@@ -443,7 +444,7 @@ export function VoiceSettings({
           spellCheck={false}
           className="mt-2 w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
         />
-        <div className="mt-1.5 text-[11.5px] leading-relaxed text-ink-secondary">
+        <div className="mt-1.5 text-[12px] leading-relaxed text-ink-secondary">
           {t("voice.chatterboxHelp")}{" "}
           <a
             href="https://github.com/resemble-ai/chatterbox"
@@ -514,7 +515,7 @@ export function VoiceSettings({
           </div>
           {addError && <div role="alert" className="mt-1.5 text-[12px] text-danger">{addError}</div>}
           {!searchable && selectedDescription && (
-            <div className="mt-1.5 text-[11.5px] leading-relaxed text-ink-secondary">{selectedDescription}</div>
+            <div className="mt-1.5 text-[12px] leading-relaxed text-ink-secondary">{selectedDescription}</div>
           )}
         </div>
       )}
@@ -522,7 +523,7 @@ export function VoiceSettings({
       <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/40 pt-4">
         <div>
           <div className="text-[13px] font-medium text-ink">{t("voice.readReplies")}</div>
-          <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
             {t("voice.readRepliesHelp")}
           </div>
         </div>
@@ -536,7 +537,7 @@ export function VoiceSettings({
       <div className="mt-4 flex items-center justify-between gap-4">
         <div>
           <div className="text-[13px] font-medium text-ink">{t("voice.notes")}</div>
-          <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
             {t("voice.notesHelp")}
           </div>
         </div>

@@ -12,6 +12,7 @@ export type BotUpdatePatch = Partial<
     | "autoStartVps"
     | "color"
     | "mascotExpression"
+    | "mascotFaceColor"
     | "avatarUrl"
     | "avatarCrop"
     | "avatarZoom"
@@ -47,6 +48,8 @@ export type BotUpdatePatch = Partial<
   connectorTools?: Bot["connectorTools"] | null;
   connectorScopes?: Bot["connectorScopes"] | null;
   phoneApps?: Bot["phoneApps"] | null;
+  /** null: talks to every bot again. */
+  peers?: string[] | null;
   /** The server's proof the local-auto warning was shown: wire-only, never folded into bot state. */
   acknowledgeLocalAuto?: boolean;
   applyToAllThreads?: boolean;
@@ -57,8 +60,9 @@ export type BotUpdatePatch = Partial<
 
 export type BotStatePatch = Omit<
   BotUpdatePatch,
-  "computer" | "connectorTools" | "connectorScopes" | "phoneApps" | "acknowledgeLocalAuto" | "applyToAllThreads" | "keepThreadModels" | "threadId"
+  "computer" | "connectorTools" | "connectorScopes" | "phoneApps" | "peers" | "acknowledgeLocalAuto" | "applyToAllThreads" | "keepThreadModels" | "threadId"
 > & {
+  peers?: string[];
   computer?: Bot["computer"];
   connectorTools?: Bot["connectorTools"];
   connectorScopes?: Bot["connectorScopes"];
@@ -117,6 +121,7 @@ const stateOverlay = (patch: BotUpdatePatch): BotStatePatch => {
     connectorTools,
     connectorScopes,
     phoneApps,
+    peers,
     ...fields
   } = patch;
   const normalized: BotStatePatch = { ...fields };
@@ -128,6 +133,7 @@ const stateOverlay = (patch: BotUpdatePatch): BotStatePatch => {
   else if (connectorScopes !== undefined) normalized.connectorScopes = connectorScopes;
   if (phoneApps === null) normalized.phoneApps = undefined;
   else if (phoneApps !== undefined) normalized.phoneApps = phoneApps;
+  if (peers !== undefined) normalized.peers = peers ?? undefined;
   return normalized;
 };
 
