@@ -10,7 +10,7 @@ import { Store, type BotRecord, type Message } from "./store.ts";
 const selection = () => ({ instanceId: "claude", model: "claude-sonnet-5" });
 
 describe("readRunReply", () => {
-  it.each(["NOTHING NEW", "Nothing new.", "**NOTHING NEW**", "Checked 14 emails.\n\nNOTHING NEW", "  nothing new  "])办法("keeps %j quiet", (text) => {
+  it.each(["NOTHING NEW", "Nothing new.", "**NOTHING NEW**", "Checked 14 emails.\n\nNOTHING NEW", "  nothing new  "])("keeps %j quiet", (text) => {
     expect(readRunReply(text)).toEqual({ quiet: true });
   });
 
