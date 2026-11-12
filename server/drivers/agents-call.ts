@@ -178,6 +178,33 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (!ok) return { text: String(body.error ?? "Could not attach that file."), isError: true };
     return { text: `Attached ${String(body.name ?? "the file")} (${Number(body.bytes ?? 0)} bytes). It now appears in the chat with a preview.` };
   }
+  if (name === "set_profile_image") {
+    if (typeof args.path !== "string" || !args.path.trim()) {
+      return { text: "set_profile_image needs path: a PNG, JPEG, GIF or WebP file in the bot's working folder.", isError: true };
+    }
+    if (typeof args.reason !== "string" || !args.reason.trim()) {
+      return { text: "set_profile_image needs reason: one sentence explaining why.", isError: true };
+    }
+    const invalidNumber = (key: "zoom" | "focus_x" | "focus_y", min: number, max: number): boolean =>
+      args[key] !== undefined && (typeof args[key] !== "number" || !Number.isFinite(args[key]) || args[key] < min || args[key] > max);
+    if (invalidNumber("zoom", 1, 3) || invalidNumber("focus_x", 0, 1) || invalidNumber("focus_y", 0, 1)) {
+      return { text: "set_profile_image zoom must be 1–3 and focus_x/focus_y must be 0–1.", isError: true };
+    }
+    const { ok, body } = await apiResponse("/api/internal/profile-image", {
+      method: "POST",
+      body: JSON.stringify({
+        path: args.path,
+        reason: args.reason,
+        ...(typeof args.crop === "string" ? { crop: args.crop } : {}),
+        ...(typeof args.zoom === "number" ? { zoom: args.zoom } : {}),
+        ...(typeof args.focus_x === "number" ? { focusX: args.focus_x } : {}),
+        ...(typeof args.focus_y === "number" ? { focusY: args.focus_y } : {}),
+        ...(typeof args.for_bot_id === "string" && args.for_bot_id.trim() ? { forBotId: args.for_bot_id.trim() } : {}),
+      }),
+    });
+    if (!ok) return { text: String(body.error ?? "Could not set the profile image."), isError: true };
+    return confirmationResult(body, "the profile image", "profile image");
+  }
   if (CARD_TOOL_NAMES.has(name)) return callCardTool(name, args, context);
   if (RESEARCH_TOOL_NAMES.has(name)) return callResearchTool(name, args, context);
   if (HELPER_TOOL_NAMES.has(name)) return callHelperTool(name, args, context);

@@ -89,8 +89,8 @@ export function recordProfileChange(
 ): void {
   const at = Date.now();
   const rows: HistoryRow[] = [];
-  const historyText = (value: string | boolean | undefined): string =>
-    value === undefined ? "" : typeof value === "boolean" ? (value ? "on" : "off") : value;
+  const historyText = (value: string | number | boolean | undefined): string =>
+    value === undefined ? "" : typeof value === "boolean" ? (value ? "on" : "off") : String(value);
   for (const field of PROFILE_REQUEST_FIELDS) {
     const b = before[field];
     const a = after[field];

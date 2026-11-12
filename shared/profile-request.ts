@@ -1,3 +1,5 @@
+import type { BotAvatarCrop } from "./bot-avatar.ts";
+
 /**
  * Durable payload carried by a profile confirmation card (propose_profile).
  *
@@ -7,9 +9,14 @@
  * the user was shown; `expectedRevision` is a hash of the target's whole
  * profile at proposal time so a confirmation fails closed if anything moved.
  */
-export const PROFILE_REQUEST_FIELDS = ["name", "title", "description", "soul", "cwd", "notifications", "speakReplies"] as const;
+export const PROFILE_REQUEST_FIELDS = [
+  "name", "title", "description", "soul", "cwd", "notifications", "speakReplies",
+  "avatarUrl", "avatarCrop", "avatarZoom", "avatarFocusX", "avatarFocusY",
+] as const;
 export type ProfileRequestField = (typeof PROFILE_REQUEST_FIELDS)[number];
-export type ProfileRequestChanges = Partial<Record<Exclude<ProfileRequestField, "notifications" | "speakReplies">, string>> &
+export type ProfileRequestChanges = Partial<Record<Exclude<ProfileRequestField, "notifications" | "speakReplies" | "avatarCrop" | "avatarZoom" | "avatarFocusX" | "avatarFocusY">, string>> &
+  Partial<Record<"avatarCrop", BotAvatarCrop>> &
+  Partial<Record<"avatarZoom" | "avatarFocusX" | "avatarFocusY", number>> &
   Partial<Record<"notifications" | "speakReplies", boolean>>;
 
 export interface ProfileRequestCardData {

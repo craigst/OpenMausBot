@@ -6,6 +6,7 @@ import {
   extensionForMime,
   FILE_MAX_BYTES,
   IMAGE_MAX_BYTES,
+  imageSignatureMatchesMime,
   saveFile,
   saveImage,
 } from "./attachments.ts";
@@ -54,6 +55,8 @@ export interface SaveBotAttachmentInput {
   guest?: { root: string; host: string };
   /** A file this turn saved outside the roots, at a place the person named: one copied file, never a folder or a link grant. */
   savedThisTurn?: { since: number; refuse: readonly string[] };
+  /** Profile images must have the signature claimed by their filename, not only an image extension. */
+  requireImageSignature?: boolean;
 }
 
 /** Only the roots' outside_workspace refusal falls through, so a missing or oversized file in the folder says exactly that. */
@@ -84,7 +87,11 @@ export async function saveBotAttachment(input: SaveBotAttachmentInput): Promise<
     const name = displayNameFor(input.name, file.name);
     if (extensionForMime(mime)) {
       if (file.bytes > IMAGE_MAX_BYTES) throw statusError(413, `image exceeds ${IMAGE_MAX_BYTES} bytes`);
-      const saved = saveImage(await file.handle.readFile(), mime);
+      const bytes = await file.handle.readFile();
+      if (input.requireImageSignature && !imageSignatureMatchesMime(bytes, mime)) {
+        throw statusError(415, "profile image bytes do not match the PNG, JPEG, GIF or WebP file type");
+      }
+      const saved = saveImage(bytes, mime);
       return { attachment: { kind: "image", path: saved.path, mime: saved.mime, name }, bytes: saved.bytes };
     }
     if (!extensionForFileMime(mime)) {

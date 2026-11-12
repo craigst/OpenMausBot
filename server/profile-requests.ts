@@ -20,9 +20,14 @@ const LABELS: Record<Exclude<(typeof PROFILE_REQUEST_FIELDS)[number], "soul" | "
   description: "Description",
   notifications: "Notifications",
   speakReplies: "Speak replies",
+  avatarUrl: "Profile image",
+  avatarCrop: "Image crop",
+  avatarZoom: "Image zoom",
+  avatarFocusX: "Image focus X",
+  avatarFocusY: "Image focus Y",
 };
 const PRIVATE_WORKSPACE = "its private workspace";
-const CHOOSE_ONE = "Choose at least one of name, title, description, soul, cwd, notifications, speakReplies";
+const CHOOSE_ONE = "Choose at least one of name, title, description, soul, cwd, notifications, speakReplies, or a profile image field";
 const toggleText = (value: boolean | undefined): string => (value ? "on" : "off");
 const TEXT_FIELDS = ["name", "title", "description", "soul"] as const;
 
@@ -54,7 +59,7 @@ export interface ProfileRequestStore {
     },
   ): { id: string };
   patchMessage(threadId: string, messageId: string, patch: { card: OptionCardLike }): { id: string } | null;
-  patchBotProfile(id: string, patch: Partial<Pick<BotRecord, "name" | "title" | "description" | "cwd" | "soul" | "notifications" | "speakReplies" | "lastProfileRequestId">>): BotRecord | null;
+  patchBotProfile(id: string, patch: Partial<Pick<BotRecord, "name" | "title" | "description" | "cwd" | "soul" | "notifications" | "speakReplies" | "avatarUrl" | "avatarCrop" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "lastProfileRequestId">>): BotRecord | null;
 }
 
 export interface ProfileRequestServiceOptions {
@@ -142,10 +147,22 @@ function parseChanges(input: unknown): ProfileRequestChanges {
       if (value !== undefined) changes[field] = value as boolean;
       continue;
     }
+    if (field === "avatarZoom" || field === "avatarFocusX" || field === "avatarFocusY") {
+      if (typeof value === "number") changes[field] = value;
+      continue;
+    }
     // Hidden under the card's visible fields, where the store's shallow card redaction cannot reach.
     if (typeof value !== "string") continue;
     const redacted = redactSecretsInText(value);
     // A redaction mask can be longer than the secret, so the cap is checked again after scrubbing.
+    if (field === "avatarUrl") {
+      changes.avatarUrl = value;
+      continue;
+    }
+    if (field === "avatarCrop") {
+      changes.avatarCrop = value as ProfileRequestChanges["avatarCrop"];
+      continue;
+    }
     if (field === "soul") {
       if (Buffer.byteLength(redacted, "utf8") > BOT_PROFILE_LIMITS.soul) {
         throw new ProfileRequestError("standing instructions must be at most 24000 bytes");
@@ -181,6 +198,10 @@ export function profileCardCopy(
     if (changes[field] === undefined) continue;
     if (field === "notifications" || field === "speakReplies") {
       lines.push(`${LABELS[field]}: ${toggleText(before[field] as boolean | undefined)} → ${toggleText(changes[field] as boolean | undefined)}`);
+      continue;
+    }
+    if (field === "avatarUrl") {
+      lines.push(`${LABELS[field]}: ${changes[field] ? "updated" : "cleared"}`);
       continue;
     }
     lines.push(`${LABELS[field]}: "${before[field] ?? ""}" → "${changes[field]}"`);
@@ -259,10 +280,25 @@ export class ProfileRequestService {
         if (value === undefined || value === snapshot[field]) continue;
         before[field] = snapshot[field];
         finalChanges[field] = value;
+      } else if (field === "avatarZoom" || field === "avatarFocusX" || field === "avatarFocusY") {
+        const value = changes[field];
+        if (value === undefined || value === snapshot[field]) continue;
+        before[field] = snapshot[field];
+        finalChanges[field] = value;
+      } else if (field === "avatarUrl") {
+        const value = changes.avatarUrl;
+        if (value === undefined || value === snapshot.avatarUrl) continue;
+        before.avatarUrl = snapshot.avatarUrl;
+        finalChanges.avatarUrl = value;
+      } else if (field === "avatarCrop") {
+        const value = changes.avatarCrop;
+        if (value === undefined || value === snapshot.avatarCrop) continue;
+        before.avatarCrop = snapshot.avatarCrop;
+        finalChanges.avatarCrop = value;
       } else {
         const value = changes[field];
         if (value === undefined || value === snapshot[field]) continue;
-        before[field] = redactSecretsInText(snapshot[field]);
+        before[field] = redactSecretsInText(String(snapshot[field]));
         if (before[field] !== snapshot[field]) exactBefore = false;
         finalChanges[field] = value;
       }
@@ -358,7 +394,7 @@ export class ProfileRequestService {
     const patch: Parameters<ProfileRequestStore["patchBotProfile"]>[1] = {};
     for (const field of PROFILE_REQUEST_FIELDS) {
       if (field === "cwd" || payload.changes[field] === undefined) continue;
-      (patch as Record<string, unknown>)[field] = rest[field];
+      (patch as Record<string, unknown>)[field] = field === "avatarUrl" && rest[field] === "" ? undefined : rest[field];
     }
     if (payload.changes.cwd !== undefined) {
       const checked = validateBotCwd(cwd || null);

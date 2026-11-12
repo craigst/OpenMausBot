@@ -14302,6 +14302,64 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
         }
       }
+      if (method === "POST" && path === "/api/internal/profile-image") {
+        const from = internalSender;
+        const fromThreadId = internalCapability.threadId;
+        if (!connectorThread(from.id, fromThreadId)) {
+          return json(res, 403, { error: "source conversation does not belong to sender" });
+        }
+        const body = await readInternalBody();
+        const requestedPath = typeof body.path === "string" ? body.path : "";
+        const reason = typeof body.reason === "string" ? body.reason : "";
+        const forBotId = typeof body.forBotId === "string" && body.forBotId.trim() ? body.forBotId.trim() : undefined;
+        let savedPath: string | undefined;
+        try {
+          requireActiveInternalCapability();
+          const vm = await attachmentVmForTurn(internalCapability);
+          const saved = await saveBotAttachment({
+            path: requestedPath,
+            roots: messageFileRootsForThread(from.id, fromThreadId).filter((root) => root !== ATTACHMENTS_DIR),
+            ...(vm ? { guest: { root: VM_WORKSPACE_GUEST, host: vm.workspaceDir } } : {}),
+            ...(internalCapability.deliversSavedFiles && internalCapability.turnStartedAt !== undefined
+              ? { savedThisTurn: { since: internalCapability.turnStartedAt, refuse: [DATA_DIR] } }
+              : {}),
+            requireImageSignature: true,
+          });
+          savedPath = saved.attachment.path;
+          if (saved.attachment.kind !== "image") {
+            throw Object.assign(new Error("profile image must be a PNG, JPEG, GIF or WebP image"), { status: 415 });
+          }
+          const avatarUrl = botAvatarUrlFromStoredPath(savedPath);
+          if (!avatarUrl) throw Object.assign(new Error("could not store the profile image"), { status: 500 });
+          requireActiveInternalCapability();
+          const owner = connectorThread(from.id, fromThreadId);
+          if (!owner) throw Object.assign(new Error("source conversation does not belong to sender"), { status: 403 });
+          const proposed = profileRequests.submit({
+            botId: from.id,
+            threadId: fromThreadId,
+            targetBotId: forBotId,
+            changes: {
+              avatarUrl,
+              avatarCrop: typeof body.crop === "string" ? body.crop : "circle",
+              ...(typeof body.zoom === "number" ? { avatarZoom: body.zoom } : {}),
+              ...(typeof body.focusX === "number" ? { avatarFocusX: body.focusX } : {}),
+              ...(typeof body.focusY === "number" ? { avatarFocusY: body.focusY } : {}),
+            },
+            reason,
+            from: owner.group ? { botId: from.id, name: from.name, color: from.color } : undefined,
+          });
+          appendDecision(DATA_DIR, {
+            threadId: fromThreadId, requestId: proposed.requestId, botId: from.id, botName: from.name,
+            tool: "set_profile_image", summary: proposed.detail, decision: proposed.state === "applied" ? "auto-approved" : "card-shown",
+            source: proposed.state === "applied" ? proposed.appliedBy ?? "full-access" : "profile",
+          });
+          savedPath = undefined;
+          return json(res, 201, proposed);
+        } catch (error) {
+          if (savedPath) deleteAttachment(savedPath);
+          throw error;
+        }
+      }
       if (method === "POST" && path === "/api/internal/profile-requests") {
         const parsed = z.object({
           fromBotId: z.string().min(1).max(128),

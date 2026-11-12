@@ -11083,6 +11083,62 @@ describe("harness HTTP API", () => {
     }
   });
 
+  it("copies an image through the profile tool and persists its display settings", async () => {
+    const bot = (await api("POST", "/api/bots", { name: "Avatar bot" })).body.bot;
+    const imagePath = join(home, ".openmausbot", "workspaces", bot.id, "atlas-avatar.png");
+    mkdirSync(dirname(imagePath), { recursive: true });
+    const imageBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    writeFileSync(imagePath, imageBytes);
+    try {
+      const token = await mintTestCapability(BASE, bot.id, bot.threadId);
+      const response = await fetch(`${BASE}/api/internal/profile-image`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          path: imagePath, reason: "Set the team profile image.", crop: "rounded", zoom: 1.5, focusX: 0.2, focusY: 0.7,
+        }),
+      });
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({ state: "applied" });
+
+      const saved = (await api("GET", "/api/bots")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id);
+      expect(saved).toMatchObject({ avatarCrop: "rounded", avatarZoom: 1.5, avatarFocusX: 0.2, avatarFocusY: 0.7 });
+      expect(saved.avatarUrl).toMatch(/^\/api\/attachments\/[0-9a-f-]+\.png$/);
+      const served = await fetch(`${BASE}${saved.avatarUrl}`);
+      expect(served.status).toBe(200);
+      expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array(imageBytes));
+
+      const fakePath = join(home, ".openmausbot", "workspaces", bot.id, "fake.png");
+      writeFileSync(fakePath, "not an image");
+      const fakeToken = await mintTestCapability(BASE, bot.id, bot.threadId);
+      const fake = await fetch(`${BASE}/api/internal/profile-image`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${fakeToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ path: fakePath, reason: "This must be rejected." }),
+      });
+      expect(fake.status).toBe(415);
+      expect((await api("GET", "/api/bots")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id).avatarUrl).toBe(saved.avatarUrl);
+
+      for (const [name, bytes] of [
+        ["truncated.jpg", Buffer.from([0xff, 0xd8, 0xff])],
+        ["truncated.gif", Buffer.from("GIF89a")],
+        ["truncated.webp", Buffer.from("RIFFxxxxWEBP")],
+      ] as const) {
+        const truncatedPath = join(home, ".openmausbot", "workspaces", bot.id, name);
+        writeFileSync(truncatedPath, bytes);
+        const truncatedToken = await mintTestCapability(BASE, bot.id, bot.threadId);
+        const truncated = await fetch(`${BASE}/api/internal/profile-image`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${truncatedToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ path: truncatedPath, reason: "This must also be rejected." }),
+        });
+        expect(truncated.status, name).toBe(415);
+      }
+    } finally {
+      await api("DELETE", `/api/bots/${bot.id}`);
+    }
+  });
+
   it("only lets a section's Chief of Staff change another bot's profile, which applies at Ask with an Undo", async () => {
     const a = (await api("POST", "/api/bots", { name: "Ari" })).body.bot;
     const b = (await api("POST", "/api/bots", { name: "Bo" })).body.bot;
