@@ -109,13 +109,138 @@ export function extensionForMime(mime: string | undefined): string | null {
   return IMAGE_MIMES[mime.split(";")[0]!.trim().toLowerCase()] ?? null;
 }
 
-/** Checks the fixed file signatures for images that are promoted to bot profile assets. */
+function hasBytes(bytes: Buffer, offset: number, expected: string): boolean {
+  return bytes.subarray(offset, offset + expected.length).equals(Buffer.from(expected));
+}
+
+function validPng(bytes: Buffer): boolean {
+  if (!bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return false;
+  let offset = 8;
+  let header = false;
+  let data = false;
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const end = offset + 12 + length;
+    if (end > bytes.length) return false;
+    const kind = bytes.toString("ascii", offset + 4, offset + 8);
+    if (kind === "IHDR") {
+      if (offset !== 8 || length !== 13) return false;
+      header = true;
+    } else if (kind === "IDAT") {
+      data = true;
+    } else if (kind === "IEND") {
+      return header && data && length === 0 && end === bytes.length;
+    }
+    offset = end;
+  }
+  return false;
+}
+
+function validJpeg(bytes: Buffer): boolean {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return false;
+  let offset = 2;
+  let frame = false;
+  let scan = false;
+  const isFrame = (marker: number): boolean =>
+    (marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) ||
+    (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf);
+  while (offset < bytes.length) {
+    if (bytes[offset++] !== 0xff) return false;
+    while (offset < bytes.length && bytes[offset] === 0xff) offset++;
+    if (offset >= bytes.length) return false;
+    const marker = bytes[offset++];
+    if (marker === 0xd9) return frame && scan && offset === bytes.length;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 2 > bytes.length) return false;
+    const length = bytes.readUInt16BE(offset);
+    if (length < 2 || offset + length > bytes.length) return false;
+    if (isFrame(marker)) frame = true;
+    offset += length;
+    if (marker !== 0xda) continue;
+    scan = true;
+    while (offset < bytes.length) {
+      if (bytes[offset++] !== 0xff) continue;
+      while (offset < bytes.length && bytes[offset] === 0xff) offset++;
+      if (offset >= bytes.length) return false;
+      const scanMarker = bytes[offset++];
+      if (scanMarker === 0x00 || (scanMarker >= 0xd0 && scanMarker <= 0xd7)) continue;
+      return scanMarker === 0xd9 && frame && offset === bytes.length;
+    }
+    return false;
+  }
+  return false;
+}
+
+function skipGifBlocks(bytes: Buffer, start: number): number {
+  let offset = start;
+  while (offset < bytes.length) {
+    const length = bytes[offset++];
+    if (length === undefined || offset + length > bytes.length) return -1;
+    offset += length;
+    if (length === 0) return offset;
+  }
+  return -1;
+}
+
+function validGif(bytes: Buffer): boolean {
+  if ((!hasBytes(bytes, 0, "GIF87a") && !hasBytes(bytes, 0, "GIF89a")) || bytes.length < 13) return false;
+  let offset = 13;
+  const global = bytes[10]!;
+  if (global & 0x80) offset += 3 * (1 << ((global & 0x07) + 1));
+  let image = false;
+  while (offset < bytes.length) {
+    const marker = bytes[offset++];
+    if (marker === 0x3b) return image && offset === bytes.length;
+    if (marker === 0x2c) {
+      if (offset + 9 > bytes.length) return false;
+      const local = bytes[offset + 8]!;
+      offset += 9;
+      if (local & 0x80) offset += 3 * (1 << ((local & 0x07) + 1));
+      if (offset >= bytes.length) return false;
+      offset += 1;
+      offset = skipGifBlocks(bytes, offset);
+      if (offset < 0) return false;
+      image = true;
+      continue;
+    }
+    if (marker === 0x21) {
+      if (offset >= bytes.length) return false;
+      offset = skipGifBlocks(bytes, offset + 1);
+      if (offset < 0) return false;
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
+function validWebp(bytes: Buffer): boolean {
+  if (bytes.length < 20 || !hasBytes(bytes, 0, "RIFF") || !hasBytes(bytes, 8, "WEBP")) return false;
+  if (bytes.readUInt32LE(4) + 8 !== bytes.length) return false;
+  let offset = 12;
+  let frame = false;
+  while (offset < bytes.length) {
+    if (offset + 8 > bytes.length) return false;
+    const kind = bytes.toString("ascii", offset, offset + 4);
+    const length = bytes.readUInt32LE(offset + 4);
+    const end = offset + 8 + length;
+    const paddedEnd = end + (length & 1);
+    if (paddedEnd > bytes.length) return false;
+    if (kind === "VP8 " && length >= 10) frame = true;
+    if (kind === "VP8L" && length >= 5) frame = true;
+    if (kind === "ANMF" && length >= 16) frame = true;
+    offset = paddedEnd;
+  }
+  return frame && offset === bytes.length;
+}
+
+/** Checks that promoted profile images have a complete container, not only a matching filename or magic prefix. */
 export function imageSignatureMatchesMime(bytes: Buffer, mime: string): boolean {
   const normalized = mime.split(";", 1)[0]!.trim().toLowerCase();
-  if (normalized === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  if (normalized === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (normalized === "image/gif") return bytes.subarray(0, 6).equals(Buffer.from("GIF87a")) || bytes.subarray(0, 6).equals(Buffer.from("GIF89a"));
-  if (normalized === "image/webp") return bytes.subarray(0, 4).equals(Buffer.from("RIFF")) && bytes.subarray(8, 12).equals(Buffer.from("WEBP"));
+  if (normalized === "image/png") return validPng(bytes);
+  if (normalized === "image/jpeg") return validJpeg(bytes);
+  if (normalized === "image/gif") return validGif(bytes);
+  if (normalized === "image/webp") return validWebp(bytes);
   return false;
 }
 

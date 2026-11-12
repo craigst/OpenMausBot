@@ -11087,7 +11087,8 @@ describe("harness HTTP API", () => {
     const bot = (await api("POST", "/api/bots", { name: "Avatar bot" })).body.bot;
     const imagePath = join(home, ".openmausbot", "workspaces", bot.id, "atlas-avatar.png");
     mkdirSync(dirname(imagePath), { recursive: true });
-    writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const imageBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    writeFileSync(imagePath, imageBytes);
     try {
       const token = await mintTestCapability(BASE, bot.id, bot.threadId);
       const response = await fetch(`${BASE}/api/internal/profile-image`, {
@@ -11105,7 +11106,7 @@ describe("harness HTTP API", () => {
       expect(saved.avatarUrl).toMatch(/^\/api\/attachments\/[0-9a-f-]+\.png$/);
       const served = await fetch(`${BASE}${saved.avatarUrl}`);
       expect(served.status).toBe(200);
-      expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array(imageBytes));
 
       const fakePath = join(home, ".openmausbot", "workspaces", bot.id, "fake.png");
       writeFileSync(fakePath, "not an image");
@@ -11117,6 +11118,22 @@ describe("harness HTTP API", () => {
       });
       expect(fake.status).toBe(415);
       expect((await api("GET", "/api/bots")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id).avatarUrl).toBe(saved.avatarUrl);
+
+      for (const [name, bytes] of [
+        ["truncated.jpg", Buffer.from([0xff, 0xd8, 0xff])],
+        ["truncated.gif", Buffer.from("GIF89a")],
+        ["truncated.webp", Buffer.from("RIFFxxxxWEBP")],
+      ] as const) {
+        const truncatedPath = join(home, ".openmausbot", "workspaces", bot.id, name);
+        writeFileSync(truncatedPath, bytes);
+        const truncatedToken = await mintTestCapability(BASE, bot.id, bot.threadId);
+        const truncated = await fetch(`${BASE}/api/internal/profile-image`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${truncatedToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ path: truncatedPath, reason: "This must also be rejected." }),
+        });
+        expect(truncated.status, name).toBe(415);
+      }
     } finally {
       await api("DELETE", `/api/bots/${bot.id}`);
     }
