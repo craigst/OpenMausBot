@@ -765,6 +765,25 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "set_profile_image",
+    description:
+      "Set this bot's custom profile image from a PNG, JPEG, GIF or WebP file in its working folder. The image is copied into OpenMausBot's private attachment store and applied through the normal profile permission and Undo path." + CHIEF_PROFILE_TARGET + APPLIES_OUTCOME,
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        path: { type: "string", minLength: 1, description: "Image path in the bot's working folder, or a path saved by this turn." },
+        crop: { type: "string", enum: ["mascot", "circle", "rounded", "square"], description: "How the image is cropped in the profile. Defaults to circle." },
+        zoom: { type: "number", minimum: 1, maximum: 3, description: "Image zoom from 1 to 3. Defaults to 1." },
+        focus_x: { type: "number", minimum: 0, maximum: 1, description: "Horizontal image focus from 0 to 1. Defaults to 0.5." },
+        focus_y: { type: "number", minimum: 0, maximum: 1, description: "Vertical image focus from 0 to 1. Defaults to 0.5." },
+        reason: { type: "string", minLength: 1, maxLength: 500, description: "One sentence the user will see explaining why." },
+        for_bot_id: { type: "string", description: "Chief of Staff only: the id of another bot in your section whose profile this changes." },
+      },
+      required: ["path", "reason"],
+    },
+  },
+  {
     name: "propose_model",
     description:
       "Submit a user-requested switch of this bot's default engine and model. Use the exact instance and model ids the person named, or for a Chief the ids from the team-setup catalog. The result warns about capabilities the switch gains or loses; existing threads keep their current models." + APPLIES_OUTCOME,
@@ -949,7 +968,7 @@ const VOICE_TOOL_NAMES = new Set(["send_voice_note"]);
 const CHIEF_ONLY_TOOL_NAMES = new Set([
   "create_bot", "list_team_setup", "list_team_library", "propose_team_setup", "propose_bot_deletion", "create_room", "manage_room", "retry_thread",
 ]);
-const CHIEF_TARGET_TOOL_NAMES = new Set(["propose_profile", "propose_model"]);
+const CHIEF_TARGET_TOOL_NAMES = new Set(["propose_profile", "set_profile_image", "propose_model"]);
 const WATCHER_TOOL_NAMES = new Set(["create_options_card"]);
 
 const LOCAL_VM_TOOL_NAMES = new Set(["vm_exec"]);

@@ -48,7 +48,7 @@ const SKILL_APPLIED_LINE = {
   update: "approval.applied.skill.update",
 } as const;
 
-const PROFILE_FIELD_LABEL: Record<ProfileRequestField, LocaleKey> = {
+const PROFILE_FIELD_LABEL: Partial<Record<ProfileRequestField, LocaleKey>> = {
   name: "approval.applied.field.name",
   title: "approval.applied.field.title",
   description: "approval.applied.field.description",
@@ -56,6 +56,15 @@ const PROFILE_FIELD_LABEL: Record<ProfileRequestField, LocaleKey> = {
   cwd: "approval.applied.field.cwd",
   notifications: "approval.applied.field.notifications",
   speakReplies: "approval.applied.field.speakReplies",
+};
+
+const profileFieldLabel = (field: ProfileRequestField): string => {
+  const localized = PROFILE_FIELD_LABEL[field];
+  if (localized) return t(localized);
+  return field === "avatarUrl" ? "profile image"
+    : field === "avatarCrop" ? "image crop"
+      : field === "avatarZoom" ? "image zoom"
+        : field === "avatarFocusX" ? "image focus X" : "image focus Y";
 };
 
 /** A routine card no one answered is from before Triggers v2 applied changes on their own: nothing can confirm it now. */
@@ -159,7 +168,7 @@ export function appliedChange(card: OptionCardData, name: string): { line: strin
   const profile = card.profileRequest;
   if (profile) {
     const title = PROFILE_REQUEST_FIELDS.filter((field) => profile.changes[field] !== undefined)
-      .map((field) => t(PROFILE_FIELD_LABEL[field])).join(", ");
+      .map(profileFieldLabel).join(", ");
     const line = profile.targetBotId === profile.botId
       ? t("approval.applied.profileOwn", { name, title })
       : t("approval.applied.profileOther", { name, target: `@${profile.targetName}`, title });

@@ -11,7 +11,10 @@ import {
   recordProfileChange,
 } from "./profile-versions.ts";
 
-const base = { name: "Scout", title: "", description: "", soul: "", notifications: true, speakReplies: false };
+const base = {
+  name: "Scout", title: "", description: "", soul: "", notifications: true, speakReplies: false,
+  avatarUrl: "", avatarCrop: "mascot" as const, avatarZoom: 1, avatarFocusX: 0.5, avatarFocusY: 0.5,
+};
 
 /** A real bot has its folder before any profile change (writeSoulMirror at creation), so the tests do too. */
 function withBotFolder(id: string): void {
@@ -30,6 +33,7 @@ describe("profileRevision", () => {
     }
     expect(profileSnapshot({ name: "A", title: "B", description: "C", soul: undefined })).toEqual({
       name: "A", title: "B", description: "C", soul: "", cwd: "", notifications: true, speakReplies: false,
+      avatarUrl: "", avatarCrop: "mascot", avatarZoom: 1, avatarFocusX: 0.5, avatarFocusY: 0.5,
     });
   });
 });

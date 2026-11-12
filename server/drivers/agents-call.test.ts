@@ -175,6 +175,52 @@ describe("propose_profile", () => {
   });
 });
 
+describe("set_profile_image", () => {
+  it("posts the image path, display options, reason, and Chief target", async () => {
+    const calls: Array<{ path: string; body: any }> = [];
+    const result = await callTool("set_profile_image", {
+      path: "/work/avatar.png",
+      crop: "rounded",
+      zoom: 1.5,
+      focus_x: 0.2,
+      focus_y: 0.7,
+      reason: "Craig asked for the team avatar.",
+      for_bot_id: "atlas",
+    }, context({
+      client: {
+        api: async () => ({}),
+        apiResponse: async (path, init) => {
+          calls.push({ path, body: JSON.parse(String(init?.body)) });
+          return { ok: true, status: 201, body: { state: "applied", summary: "Profile image updated." } };
+        },
+      },
+    }));
+    expect(result.isError).toBeFalsy();
+    expect(result.text).toContain("Profile image updated.");
+    expect(calls).toEqual([{
+      path: "/api/internal/profile-image",
+      body: {
+        path: "/work/avatar.png",
+        reason: "Craig asked for the team avatar.",
+        crop: "rounded",
+        zoom: 1.5,
+        focusX: 0.2,
+        focusY: 0.7,
+        forBotId: "atlas",
+      },
+    }]);
+  });
+
+  it("rejects invalid image display ranges before calling the server", async () => {
+    const client = context();
+    for (const [key, value] of [["zoom", 0], ["focus_x", 2], ["focus_y", -1]] as const) {
+      const result = await callTool("set_profile_image", { path: "avatar.png", reason: "r", [key]: value }, client);
+      expect(result.isError, key).toBe(true);
+      expect(result.text, key).toContain("set_profile_image");
+    }
+  });
+});
+
 describe("memory_update", () => {
   // The harness route, in process: the real updateMemory behind the tool.
   const harness = (botId: string): ToolCallContext["client"] => ({
