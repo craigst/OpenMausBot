@@ -10,7 +10,7 @@ import { Store, type BotRecord, type Message } from "./store.ts";
 const selection = () => ({ instanceId: "claude", model: "claude-sonnet-5" });
 
 describe("readRunReply", () => {
-  it.each(["NOTHING NEW", "Nothing new.", "**NOTHING NEW**", "Checked 14 emails.\n\nNOTHING NEW", "  nothing new  "])("keeps %j quiet", (text) => {
+  it.each(["NOTHING NEW", "Nothing new.", "**NOTHING NEW**", "Checked 14 emails.\n\nNOTHING NEW", "  nothing new  "])办法("keeps %j quiet", (text) => {
     expect(readRunReply(text)).toEqual({ quiet: true });
   });
 
@@ -235,6 +235,43 @@ describe("automation reports", () => {
     f.store.appendMessage(run.threadId!, { role: "bot", kind: "options", card: { ...card, requestId: "ask-2", answered: "allow" } });
     f.store.appendMessage(run.threadId!, { role: "bot", kind: "options", card: { ...card, requestId: "ask-3", autoApplied: true } });
     expect(f.store.messagesFor(f.main).filter((message) => message.kind === "options")).toHaveLength(1);
+  });
+
+  it("delivers a run's app card into the chat it reports to, once per run, and keeps it in step with updates", () => {
+    const f = fixture();
+    const run = f.finished(null, "Load cards", { status: "running" });
+    const app = { v: 1 as const, source: "html" as const, title: "BCA loads", doc: "doc-1", rev: 0, bytes: 120, border: true, network: { connect: [], resources: [] } };
+    const original = f.store.appendMessage(run.threadId!, { role: "bot", kind: "app", text: "[App] BCA loads", app });
+    const copies = () => f.store.messagesFor(f.main).filter((message) => message.kind === "app");
+    const copy = () => copies()[0];
+
+    expect(copy()).toMatchObject({
+      kind: "app", text: "[App] BCA loads", app,
+      automation: expect.objectContaining({ runId: run.id, name: "Load cards", copyOf: original.id, executionThreadId: run.threadId }),
+    });
+    expect(copy()?.automation?.needsYou).toBeUndefined();
+
+    // A retry, or a second app card in the same run, does not add another copy.
+    f.store.appendMessage(run.threadId!, { role: "bot", kind: "app", text: "[App] Again", app: { ...app, title: "Again" } });
+    expect(copies()).toHaveLength(1);
+
+    // update_html patches the original row; the delivered card follows it.
+    f.store.patchMessage(run.threadId!, original.id, { text: "[App] BCA loads v2", app: { ...app, rev: 1, doc: "doc-2" } });
+    expect(copy()).toMatchObject({ text: "[App] BCA loads v2", app: expect.objectContaining({ rev: 1, doc: "doc-2" }) });
+
+    // The text line still lands once, beside the card.
+    f.store.appendMessage(run.threadId!, { role: "bot", kind: "text", text: "Nine loads.", turnId: "last", turnTerminal: true });
+    f.runs.get(run.id)!.status = "completed";
+    f.reports.runSettled(f.runs.get(run.id)!, "last");
+    expect(f.store.messagesFor(f.main).filter((message) => message.kind === "text" && message.automation)).toHaveLength(1);
+    expect(copies()).toHaveLength(1);
+
+    // An app card in a chat that is not an automation run is left where it is.
+    const ordinary = f.store.createTask(f.bot.id, "Ordinary chat", false)!;
+    f.store.appendMessage(ordinary.threadId, { role: "bot", kind: "app", text: "[App] Unrelated", app: { ...app, title: "Unrelated" } });
+    expect(copies()).toHaveLength(1);
+    expect(f.store.messagesFor(ordinary.threadId).filter((message) => message.kind === "app")).toHaveLength(1);
+    expect(f.store.messagesFor(f.main).filter((message) => message.kind === "options")).toHaveLength(0);
   });
 
   it("names a sign-in, connection or credential card the run waits on, and stops saying it needs the person once that card settles", () => {
