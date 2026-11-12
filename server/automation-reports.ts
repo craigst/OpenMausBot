@@ -108,15 +108,33 @@ export function createAutomationReports(deps: AutomationReportDeps) {
   const copyOf = (run: RoutineRun, threadId: string, originalId: string) =>
     store.messagesFor(threadId).find((message) => message.automation?.runId === run.id && message.automation.copyOf === originalId);
 
-  /** An option card is copied whole and answered through its request; any other card the run waits on is named. */
+  /** An option card is copied whole and answered through its request; an app card is copied as the page it
+   * shows; any other card the run waits on is named. */
   const writeCopy = (line: Extract<Waiting, { kind: "card" }>, target: { bot: BotRecord; threadId: string }) => {
     const original = store.messagesFor(line.threadId).find((message) => message.id === line.messageId);
-    const named = original ? waitingCardText(original) : null;
-    if (!original || (!named && !liveCardKind(original.card))) return;
+    if (!original) return;
+    const named = waitingCardText(original);
+    if (named) {
+      const automation = lineOf(line.run, { needsYou: true, copyOf: original.id });
+      store.appendMessage(target.threadId, { role: "bot", kind: "text", text: named, automation });
+      deps.wrote(target.bot, target.threadId);
+      return;
+    }
+    if (original.kind === "app" && original.app) {
+      // One app card per run: a retry or resume that shows another page must not deliver a second copy.
+      const delivered = store.messagesFor(target.threadId).some((message) => message.automation?.runId === line.run.id && message.kind === "app");
+      if (delivered) return;
+      store.appendMessage(target.threadId, {
+        role: "bot", kind: "app", text: original.text ?? "", app: { ...original.app },
+        automation: lineOf(line.run, { copyOf: original.id }),
+      });
+      store.patchTask(target.bot.id, target.threadId, { unread: true });
+      return;
+    }
+    if (!liveCardKind(original.card)) return;
     const automation = lineOf(line.run, { needsYou: true, copyOf: original.id });
-    store.appendMessage(target.threadId, named ? { role: "bot", kind: "text", text: named, automation } : { role: "bot", kind: "options", card: { ...original.card! }, automation });
-    if (named) deps.wrote(target.bot, target.threadId);
-    else store.patchTask(target.bot.id, target.threadId, { unread: true });
+    store.appendMessage(target.threadId, { role: "bot", kind: "options", card: { ...original.card! }, automation });
+    store.patchTask(target.bot.id, target.threadId, { unread: true });
   };
 
   /** False while the chat it goes to is busy. */
@@ -184,18 +202,22 @@ export function createAutomationReports(deps: AutomationReportDeps) {
     if (change.type !== "message" && change.type !== "message.patch") return;
     const { message } = change;
     const option = message.kind === "options" && Boolean(message.card?.requestId);
-    if (message.automation || (!option && message.kind !== "signin" && message.kind !== "connector" && message.kind !== "secret")) return;
+    const app = message.kind === "app" && Boolean(message.app);
+    if (message.automation || (!option && !app && message.kind !== "signin" && message.kind !== "connector" && message.kind !== "secret")) return;
     const run = deps.routines()?.runForThread(change.threadId);
     const target = run?.target === "bot" && store.taskByThread(run.botId, change.threadId)?.routineRunId === run.id ? destination(run) : null;
     if (!run || !target) return;
     if (change.type === "message") {
-      if (option ? !message.card!.autoApplied : waitingCardText(message)) {
-        hold(`card:${message.id}`, { kind: "card", run, threadId: change.threadId, messageId: message.id });
-      }
+      if (app) hold(`card:${message.id}`, { kind: "card", run, threadId: change.threadId, messageId: message.id });
+      else if (option ? !message.card!.autoApplied : waitingCardText(message)) hold(`card:${message.id}`, { kind: "card", run, threadId: change.threadId, messageId: message.id });
       return;
     }
     const copy = copyOf(run, target.threadId, message.id);
     if (!copy) return;
+    if (app) {
+      if (message.app) store.patchMessage(target.threadId, copy.id, { app: { ...message.app }, text: message.text ?? copy.text });
+      return;
+    }
     if (option && JSON.stringify(copy.card) !== JSON.stringify(message.card)) store.patchMessage(target.threadId, copy.id, { card: { ...message.card! } });
     if (!option && copy.automation?.needsYou && !waitingCardText(message)) {
       const { needsYou: _settled, ...line } = copy.automation;
