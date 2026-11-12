@@ -109,6 +109,16 @@ export function extensionForMime(mime: string | undefined): string | null {
   return IMAGE_MIMES[mime.split(";")[0]!.trim().toLowerCase()] ?? null;
 }
 
+/** Checks the fixed file signatures for images that are promoted to bot profile assets. */
+export function imageSignatureMatchesMime(bytes: Buffer, mime: string): boolean {
+  const normalized = mime.split(";", 1)[0]!.trim().toLowerCase();
+  if (normalized === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (normalized === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (normalized === "image/gif") return bytes.subarray(0, 6).equals(Buffer.from("GIF87a")) || bytes.subarray(0, 6).equals(Buffer.from("GIF89a"));
+  if (normalized === "image/webp") return bytes.subarray(0, 4).equals(Buffer.from("RIFF")) && bytes.subarray(8, 12).equals(Buffer.from("WEBP"));
+  return false;
+}
+
 export function ensureAttachmentsDir(): void {
   mkdirSync(ATTACHMENTS_DIR, { recursive: true, mode: 0o700 });
 }

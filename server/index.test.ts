@@ -11087,7 +11087,7 @@ describe("harness HTTP API", () => {
     const bot = (await api("POST", "/api/bots", { name: "Avatar bot" })).body.bot;
     const imagePath = join(home, ".openmausbot", "workspaces", bot.id, "atlas-avatar.png");
     mkdirSync(dirname(imagePath), { recursive: true });
-    writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     try {
       const token = await mintTestCapability(BASE, bot.id, bot.threadId);
       const response = await fetch(`${BASE}/api/internal/profile-image`, {
@@ -11105,7 +11105,18 @@ describe("harness HTTP API", () => {
       expect(saved.avatarUrl).toMatch(/^\/api\/attachments\/[0-9a-f-]+\.png$/);
       const served = await fetch(`${BASE}${saved.avatarUrl}`);
       expect(served.status).toBe(200);
-      expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+      expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+      const fakePath = join(home, ".openmausbot", "workspaces", bot.id, "fake.png");
+      writeFileSync(fakePath, "not an image");
+      const fakeToken = await mintTestCapability(BASE, bot.id, bot.threadId);
+      const fake = await fetch(`${BASE}/api/internal/profile-image`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${fakeToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ path: fakePath, reason: "This must be rejected." }),
+      });
+      expect(fake.status).toBe(415);
+      expect((await api("GET", "/api/bots")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id).avatarUrl).toBe(saved.avatarUrl);
     } finally {
       await api("DELETE", `/api/bots/${bot.id}`);
     }

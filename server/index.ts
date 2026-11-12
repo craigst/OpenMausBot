@@ -14323,6 +14323,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             ...(internalCapability.deliversSavedFiles && internalCapability.turnStartedAt !== undefined
               ? { savedThisTurn: { since: internalCapability.turnStartedAt, refuse: [DATA_DIR] } }
               : {}),
+            requireImageSignature: true,
           });
           savedPath = saved.attachment.path;
           if (saved.attachment.kind !== "image") {
